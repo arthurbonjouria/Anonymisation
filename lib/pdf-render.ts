@@ -17,6 +17,7 @@ import { Canvas, createCanvas } from "@napi-rs/canvas";
 import path from "path";
 // @ts-ignore - pas de types officiels pour le build legacy Node
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { pdfjsAssetTraceHints } from "./pdfjs-asset-trace-hints";
 
 export interface RenderedPage {
   canvas: Canvas;
@@ -41,6 +42,27 @@ export interface RenderedPage {
 const PDFJS_ROOT = path.join(process.cwd(), "node_modules", "pdfjs-dist");
 const STANDARD_FONT_DATA_URL = path.join(PDFJS_ROOT, "standard_fonts") + path.sep;
 const CMAP_URL = path.join(PDFJS_ROOT, "cmaps") + path.sep;
+
+// `pdf.worker.mjs` est chargé par pdfjs lui-même via un `import()` dynamique
+// dont le chemin est calculé à l'exécution (`this.workerSrc`) : l'outil de
+// traçage de fichiers de Vercel (@vercel/nft), qui ne suit que les
+// références statiques qu'il peut lire directement dans le code compilé,
+// ne peut pas le détecter tout seul et l'exclut du paquet déployé — d'où
+// l'erreur "Setting up fake worker failed: Cannot find module
+// '.../pdf.worker.mjs'" une fois en ligne, alors que ça fonctionne en local
+// où tout `node_modules` est présent sur disque.
+//
+// On force sa détection en écrivant nous-mêmes un `import()` avec le chemin
+// en toutes lettres : @vercel/nft le verra et l'inclura, exactement comme il
+// inclut déjà `pdf.mjs` via l'import plus haut. La condition dépend d'une
+// variable d'environnement qui n'existe jamais, pour empêcher le minifieur
+// de supprimer ce code mort avant que le traceur ne l'analyse (un simple
+// `if (false)` serait éliminé au build).
+if (process.env.__FORCE_PDFJS_WORKER_TRACE__ === "impossible") {
+  // @ts-ignore - module sans types, référencé uniquement pour le traçage
+  void import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+  pdfjsAssetTraceHints();
+}
 
 export async function loadPdfDocument(bytes: Uint8Array) {
   const loadingTask = pdfjsLib.getDocument({
