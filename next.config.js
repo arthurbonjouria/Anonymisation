@@ -18,14 +18,23 @@ const nextConfig = {
     // dynamiquement (fs.readFile), donc le traceur ne les détecte pas tout
     // seul : sans cette entrée, ces fichiers seraient absents une fois
     // déployé et le rendu des PDF échouerait silencieusement.
+    // `pdf.worker.mjs` doit aussi être inclus explicitement : pdfjs essaie de
+    // le charger dynamiquement (son "fake worker" en Node a besoin du même
+    // fichier que le vrai worker), sans jamais faire de `require`/`import`
+    // statique dessus — le traceur ne le voit donc pas non plus tout seul.
+    // Sans ça : "Setting up fake worker failed: Cannot find module
+    // '.../pdf.worker.mjs'" une fois déployé, alors que ça fonctionne en
+    // local où tout `node_modules` est présent sur disque.
     outputFileTracingIncludes: {
       "/app/api/upload": [
         "./node_modules/pdfjs-dist/standard_fonts/**",
         "./node_modules/pdfjs-dist/cmaps/**",
+        "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       ],
       "/app/api/anonymize": [
         "./node_modules/pdfjs-dist/standard_fonts/**",
         "./node_modules/pdfjs-dist/cmaps/**",
+        "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
       ],
     },
   },
