@@ -6,7 +6,8 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
+import path from "path";
 import { PII_PATTERNS } from "./pii-patterns";
 import { detectNames } from "./name-detect";
 import type { Detection, NormalizedBox, PiiType } from "./types";
@@ -102,10 +103,32 @@ function unionBox(a: NormalizedBox, b: NormalizedBox): NormalizedBox {
 // texte. Une taille de police fixe suffit : on n'a besoin que des largeurs
 // RELATIVES entre le préfixe, la portion à masquer et le suffixe d'un item,
 // qui sont (quasiment) invariantes par mise à l'échelle de la police.
+//
+// Important : on enregistre nous-mêmes une police précise (fournie avec
+// pdfjs-dist) plutôt que d'utiliser un nom générique comme "sans-serif".
+// `@napi-rs/canvas` résout les noms génériques via les polices installées
+// sur le système d'exploitation — ça fonctionne en local (Windows/macOS ont
+// des polices par défaut), mais un environnement serverless comme Vercel
+// n'a souvent AUCUNE police système installée. Sans police résolue,
+// `measureText` renvoie une largeur de 0 pour tout, ce qui déclenchait le
+// filet de sécurité "boîte entière" de `subBoxForOverlap` pour CHAQUE
+// détection — reproduisant exactement le bug de sur-anonymisation déjà
+// corrigé, mais uniquement une fois déployé (jamais reproduit en local).
 const MEASURE_FONT_SIZE = 100;
+const MEASURE_FONT_FAMILY = "BW-Measure-Font";
+GlobalFonts.registerFromPath(
+  path.join(
+    process.cwd(),
+    "node_modules",
+    "pdfjs-dist",
+    "standard_fonts",
+    "LiberationSans-Regular.ttf"
+  ),
+  MEASURE_FONT_FAMILY
+);
 const measureCanvas = createCanvas(10, 10);
 const measureCtx = measureCanvas.getContext("2d");
-measureCtx.font = `${MEASURE_FONT_SIZE}px sans-serif`;
+measureCtx.font = `${MEASURE_FONT_SIZE}px "${MEASURE_FONT_FAMILY}"`;
 // Largeur d'un caractère "large" typique, utilisée comme marge de sécurité
 // (en unités de mesure) de chaque côté de la portion masquée.
 const SAFETY_MARGIN = measureCtx.measureText("M").width * 0.5;
@@ -143,10 +166,19 @@ function subBoxForOverlap(
 
   const fullWidth = measureText(item.text);
   if (fullWidth <= 0) {
-    // Filet de sécurité si la mesure échoue (item vide, police non
-    // supportée...) : on retombe sur la boîte entière plutôt que de risquer
-    // une boîte mal placée ou de largeur nulle.
-    return item.box;
+    // Filet de sécurité si la mesure échoue malgré la police embarquée
+    // (item vide, environnement imprévu...) : on retombe sur une simple
+    // division par nombre de caractères plutôt que sur la boîte ENTIÈRE,
+    // pour ne jamais régresser vers le bug de sur-anonymisation déjà corrigé
+    // (un item pdfjs peut représenter un paragraphe entier).
+    const fracStart = Math.max(0, (overlapStart - 1) / itemLen);
+    const fracEnd = Math.min(1, (overlapEnd + 1) / itemLen);
+    return {
+      x: item.box.x + fracStart * item.box.width,
+      y: item.box.y,
+      width: (fracEnd - fracStart) * item.box.width,
+      height: item.box.height,
+    };
   }
 
   const prefixWidth = measureText(item.text.slice(0, overlapStart));
