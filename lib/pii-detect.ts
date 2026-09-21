@@ -31,6 +31,17 @@ interface RawMatch {
   source: "regex" | "nlp";
 }
 
+// Une date n'est une donnée personnelle "sensible par défaut" que si c'est
+// une date de naissance. Un jugement/contrat contient des dizaines d'autres
+// dates (audiences, courriers, signature, jugement...) qui sont des dates de
+// PROCÉDURE, pas des données personnelles — les cocher toutes par défaut
+// noyait l'utilisateur sous des masquages inutiles. On ne relève la
+// confiance que si la date est immédiatement précédée d'un contexte de
+// naissance ("né le", "née le 3 novembre 1975 à Lyon"...).
+const BIRTH_CONTEXT_REGEX = /\bn[ée]e?\s+(?:le\s+)?$/i;
+const BIRTH_CONTEXT_WINDOW = 12; // caractères regardés juste avant la date
+const BIRTH_CONTEXT_CONFIDENCE = 0.7;
+
 function runRegexPatterns(text: string): RawMatch[] {
   const matches: RawMatch[] = [];
   for (const pattern of PII_PATTERNS) {
@@ -39,6 +50,7 @@ function runRegexPatterns(text: string): RawMatch[] {
     const regex = new RegExp(pattern.regex.source, pattern.regex.flags);
     for (const m of text.matchAll(regex)) {
       const matchedText = m[0];
+      const start = m.index ?? 0;
       // Important : une clé de contrôle invalide (ex: IBAN/NIR avec une
       // faute de frappe, ou volontairement fictif comme dans un document de
       // test) ne veut PAS dire que ce n'est pas une donnée sensible à
@@ -47,12 +59,21 @@ function runRegexPatterns(text: string): RawMatch[] {
       // pas l'exclure purement et simplement : le rejeter reviendrait à
       // laisser passer un vrai IBAN/NIR simplement mal saisi.
       const isValid = pattern.validate ? pattern.validate(matchedText) : true;
+      let confidence = isValid ? pattern.confidence : pattern.confidence * 0.85;
+
+      if (pattern.type === "date_naissance") {
+        const before = text.slice(Math.max(0, start - BIRTH_CONTEXT_WINDOW), start);
+        if (BIRTH_CONTEXT_REGEX.test(before)) {
+          confidence = Math.max(confidence, BIRTH_CONTEXT_CONFIDENCE);
+        }
+      }
+
       matches.push({
         type: pattern.type,
         text: matchedText,
-        start: m.index ?? 0,
-        end: (m.index ?? 0) + matchedText.length,
-        confidence: isValid ? pattern.confidence : pattern.confidence * 0.85,
+        start,
+        end: start + matchedText.length,
+        confidence,
         source: "regex",
       });
     }

@@ -135,16 +135,23 @@ export const PII_PATTERNS: PiiPattern[] = [
   {
     type: "date_naissance",
     label: "Date (numérique)",
-    description: "Dates au format jj/mm/aaaa",
+    description:
+      "Dates au format jj/mm/aaaa. Confiance basse par défaut : la plupart des " +
+      "dates d'un document ne sont pas des dates de naissance (dates de " +
+      "courrier, d'audience, du jugement...). Voir BIRTH_CONTEXT_REGEX dans " +
+      "lib/pii-detect.ts, qui relève la confiance quand la date est " +
+      "précédée de \"né(e) le\".",
     regex: DATE_NUMERIC_REGEX,
-    confidence: 0.55,
+    confidence: 0.35,
   },
   {
     type: "date_naissance",
     label: "Date (littérale)",
-    description: "Dates écrites en toutes lettres (ex: 12 janvier 1990)",
+    description:
+      "Dates écrites en toutes lettres (ex: 12 janvier 1990). Même logique " +
+      "de confiance contextuelle que la date numérique ci-dessus.",
     regex: DATE_LITERAL_REGEX,
-    confidence: 0.6,
+    confidence: 0.4,
   },
   {
     type: "postal_address",

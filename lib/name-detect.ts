@@ -21,6 +21,40 @@
 import nlp from "compromise";
 import { NAME_STOPWORDS_FR } from "./pii-patterns";
 
+// `compromise` ne connaît quasiment aucun nom de ville française (son
+// répertoire de lieux est anglophone) : `.places()` renvoie un tableau vide
+// pour "Clermont-Ferrand", qui se fait donc régulièrement prendre pour un
+// nom de personne par la regex "Prénom Nom" (deux mots capitalisés reliés
+// par un tiret). Liste volontairement limitée aux grandes villes françaises
+// au nom composé (les plus susceptibles de matcher ce motif) — pas
+// exhaustive, mais couvre les cas les plus fréquents dans un document
+// juridique/administratif français.
+const KNOWN_FRENCH_PLACES = new Set(
+  [
+    "Clermont-Ferrand",
+    "Saint-Étienne",
+    "Saint-Etienne",
+    "Aix-en-Provence",
+    "Boulogne-Billancourt",
+    "Saint-Denis",
+    "Villeneuve-d'Ascq",
+    "Châlons-en-Champagne",
+    "Chalons-en-Champagne",
+    "Le Havre",
+    "Le Mans",
+    "La Rochelle",
+    "Saint-Nazaire",
+    "Saint-Malo",
+    "Issy-les-Moulineaux",
+    "Neuilly-sur-Seine",
+    "Levallois-Perret",
+    "Charleville-Mézières",
+    "Charleville-Mezieres",
+    "Château-Thierry",
+    "Chateau-Thierry",
+  ].map((p) => p.toLowerCase())
+);
+
 /** Toujours `false` : voir le commentaire ci-dessus. Ne pas activer sans
  * avoir mis en place un modèle local/self-hosted et sans avoir prévenu
  * l'utilisateur explicitement dans l'UI. */
@@ -65,11 +99,42 @@ function isLikelyName(candidate: string): boolean {
   return true;
 }
 
-function regexNameCandidates(text: string): NameMatch[] {
+/**
+ * Récupère les noms de lieux reconnus par `compromise` (villes, pays...),
+ * pour les exclure ensuite des candidats "nom de personne". Sans ça, une
+ * ville au nom composé comme "Clermont-Ferrand" (casse "Prénom Nom" typique)
+ * est régulièrement prise pour un nom propre par la regex comme par
+ * `compromise` lui-même, et se retrouvait masquée alors que ce n'est pas une
+ * donnée personnelle.
+ */
+function getKnownPlaces(doc: ReturnType<typeof nlp>): Set<string> {
+  try {
+    return new Set((doc.places().out("array") as string[]).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+function isKnownPlace(candidate: string, places: Set<string>): boolean {
+  if (places.has(candidate)) return true;
+  if (KNOWN_FRENCH_PLACES.has(candidate.toLowerCase())) return true;
+  // Une ville citée avec sa préposition ("de Clermont-Ferrand") ou comme
+  // dernier mot d'un candidat plus long doit aussi être reconnue.
+  for (const place of places) {
+    if (candidate === place || candidate.endsWith(` ${place}`)) return true;
+  }
+  for (const place of KNOWN_FRENCH_PLACES) {
+    if (candidate.toLowerCase().endsWith(place)) return true;
+  }
+  return false;
+}
+
+function regexNameCandidates(text: string, places: Set<string>): NameMatch[] {
   const matches: NameMatch[] = [];
   for (const m of text.matchAll(CAPITALIZED_SEQUENCE_REGEX)) {
     const candidate = m[0];
     if (!isLikelyName(candidate)) continue;
+    if (isKnownPlace(candidate, places)) continue;
     matches.push({
       text: candidate,
       start: m.index ?? 0,
@@ -80,13 +145,14 @@ function regexNameCandidates(text: string): NameMatch[] {
   return matches;
 }
 
-function compromiseNameCandidates(text: string): NameMatch[] {
+function compromiseNameCandidates(text: string, places: Set<string>): NameMatch[] {
   const matches: NameMatch[] = [];
   try {
     const doc = nlp(text);
     const people = doc.people().out("array") as string[];
     for (const person of people) {
       if (!person || person.trim().length < 2) continue;
+      if (isKnownPlace(person, places)) continue;
       let searchFrom = 0;
       let idx = text.indexOf(person, searchFrom);
       while (idx !== -1) {
@@ -133,6 +199,10 @@ function mergeOverlapping(matches: NameMatch[], sourceText: string): NameMatch[]
 }
 
 export function detectNames(text: string): NameMatch[] {
-  const combined = [...regexNameCandidates(text), ...compromiseNameCandidates(text)];
+  const places = getKnownPlaces(nlp(text));
+  const combined = [
+    ...regexNameCandidates(text, places),
+    ...compromiseNameCandidates(text, places),
+  ];
   return mergeOverlapping(combined, text);
 }
