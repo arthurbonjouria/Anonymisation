@@ -65,7 +65,7 @@ export default function PdfPreview({
         <div
           key={page.index}
           id={`page-${page.index}`}
-          className="relative select-none rounded-lg border border-bw-border shadow-lg"
+          className="relative select-none rounded-bw border border-bw-pink-soft shadow-bw"
           style={{ width: "100%", maxWidth: 820, cursor: addZoneMode ? "crosshair" : "default" }}
           onMouseDown={(e) => {
             if (!addZoneMode) return;
@@ -150,7 +150,7 @@ export default function PdfPreview({
             />
           )}
 
-          <span className="absolute -bottom-5 left-0 text-xs text-gray-500">
+          <span className="absolute -bottom-5 left-0 font-body text-xs text-bw-cloudy">
             Page {page.index + 1}
             {page.isScanned ? " · OCR" : ""}
           </span>

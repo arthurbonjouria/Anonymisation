@@ -7,13 +7,27 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Charte graphique BONJOUR IA
         bw: {
-          bg: "#0f1115",
-          panel: "#171a21",
-          border: "#262b36",
-          accent: "#5b8def",
-          danger: "#ef5b5b",
+          pink: "#E83967",
+          "pink-dark": "#c02d55",
+          "pink-soft": "#f2d5d0",
+          cloudy: "#B1ADA1",
+          bg: "#F4F3EE",
+          white: "#FFFFFF",
+          text: "#2D2D2D",
+          danger: "#c0392b",
         },
+      },
+      fontFamily: {
+        heading: ["var(--font-poppins)", "Arial", "sans-serif"],
+        body: ["var(--font-lora)", "Georgia", "serif"],
+      },
+      borderRadius: {
+        bw: "12px",
+      },
+      boxShadow: {
+        bw: "0 4px 20px rgba(232,57,103,0.08)",
       },
     },
   },

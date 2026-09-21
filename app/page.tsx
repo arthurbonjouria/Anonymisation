@@ -111,132 +111,160 @@ export default function Home() {
   }, [uploadResult, included, manualZones]);
 
   return (
-    <main className="mx-auto min-h-screen max-w-6xl px-6 py-10">
+    <div className="flex min-h-screen flex-col bg-bw-bg font-body">
       <PrivacyModal />
-      <header className="mb-8">
-        <h1 className="text-2xl font-semibold text-white">Anonymisation de PDF</h1>
-        <p className="mt-1 text-sm text-gray-400">
-          Bonjour World — détection et suppression irréversible des données
-          personnelles, entièrement en local.
-        </p>
+
+      <header className="border-b border-bw-pink-soft bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logos/bonjouria-logo-noir-et-rose.svg"
+            alt="BONJOUR IA"
+            className="h-10 w-auto"
+          />
+          <span className="hidden font-heading text-sm font-semibold text-bw-cloudy sm:block">
+            Anonymisation de PDF
+          </span>
+        </div>
       </header>
 
-      {error && (
-        <div className="mb-6 rounded-lg border border-bw-danger/40 bg-bw-danger/10 px-4 py-3 text-sm text-red-300">
-          {error}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">
+        <div className="mb-8">
+          <h1 className="font-heading text-2xl font-extrabold text-bw-text">
+            Anonymisation de <span className="text-bw-pink">PDF</span>
+          </h1>
+          <p className="mt-1 font-body text-sm text-bw-cloudy">
+            Détection et suppression irréversible des données personnelles,
+            entièrement en local — rien n&apos;est jamais envoyé à un service tiers.
+          </p>
         </div>
-      )}
 
-      {step === "upload" && (
-        <UploadZone onFileSelected={handleFileSelected} disabled={isUploading} />
-      )}
-      {isUploading && (
-        <p className="mt-4 text-sm text-gray-400">
-          Analyse du PDF en cours (extraction de texte, OCR si nécessaire,
-          détection des données personnelles)…
-        </p>
-      )}
-
-      {step === "review" && uploadResult && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-          <div>
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <button
-                onClick={() => setAddZoneMode((v) => !v)}
-                className={`rounded-lg border px-3 py-1.5 text-sm ${
-                  addZoneMode
-                    ? "border-bw-accent bg-bw-accent/20 text-white"
-                    : "border-bw-border text-gray-300 hover:border-bw-accent"
-                }`}
-              >
-                {addZoneMode ? "Mode ajout de zone (cliquer-glisser)" : "Ajouter une zone manuelle"}
-              </button>
-              <span className="text-xs text-gray-500">
-                Cliquez sur une zone rouge pour l'exclure/inclure. Cliquez sur
-                une zone bleue pour la supprimer.
-              </span>
-            </div>
-            <PdfPreview
-              pages={uploadResult.pages}
-              detections={uploadResult.detections}
-              included={included}
-              onToggleDetection={(id) =>
-                setIncluded((prev) => ({ ...prev, [id]: !prev[id] }))
-              }
-              manualZones={manualZones}
-              onAddManualZone={(zone) => setManualZones((prev) => [...prev, zone])}
-              onRemoveManualZone={(id) =>
-                setManualZones((prev) => prev.filter((z) => z.id !== id))
-              }
-              addZoneMode={addZoneMode}
-            />
+        {error && (
+          <div className="mb-6 rounded-bw border border-bw-danger/30 bg-bw-danger/5 px-4 py-3 font-body text-sm text-bw-danger">
+            {error}
           </div>
+        )}
 
-          <div className="lg:sticky lg:top-6 lg:self-start">
-            <div className="flex h-[70vh] flex-col gap-4">
-              <DetectionPanel
+        {step === "upload" && (
+          <UploadZone onFileSelected={handleFileSelected} disabled={isUploading} />
+        )}
+        {isUploading && (
+          <p className="mt-4 font-body text-sm text-bw-cloudy">
+            Analyse du PDF en cours (extraction de texte, OCR si nécessaire,
+            détection des données personnelles)…
+          </p>
+        )}
+
+        {step === "review" && uploadResult && (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+            <div>
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => setAddZoneMode((v) => !v)}
+                  className={`rounded-full border px-4 py-1.5 font-heading text-sm font-medium transition-colors ${
+                    addZoneMode
+                      ? "border-bw-pink bg-bw-pink/10 text-bw-pink"
+                      : "border-bw-cloudy/40 text-bw-text hover:border-bw-pink"
+                  }`}
+                >
+                  {addZoneMode ? "Mode ajout de zone (cliquer-glisser)" : "Ajouter une zone manuelle"}
+                </button>
+                <span className="font-body text-xs text-bw-cloudy">
+                  Cliquez sur une zone rose pour l&apos;exclure/inclure. Cliquez sur
+                  une zone sombre pour la supprimer.
+                </span>
+              </div>
+              <PdfPreview
+                pages={uploadResult.pages}
                 detections={uploadResult.detections}
                 included={included}
-                onToggle={(id) =>
+                onToggleDetection={(id) =>
                   setIncluded((prev) => ({ ...prev, [id]: !prev[id] }))
                 }
-                onToggleAll={(value) => {
-                  const next: Record<string, boolean> = {};
-                  for (const d of uploadResult.detections) next[d.id] = value;
-                  setIncluded(next);
-                }}
-                activePage={activePage}
-                onJumpToPage={(page) => {
-                  setActivePage(page);
-                  document
-                    .getElementById(`page-${page}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                }}
-                aiNameDetectionEnabled={false}
-                onToggleAiNameDetection={() => {}}
+                manualZones={manualZones}
+                onAddManualZone={(zone) => setManualZones((prev) => [...prev, zone])}
+                onRemoveManualZone={(id) =>
+                  setManualZones((prev) => prev.filter((z) => z.id !== id))
+                }
+                addZoneMode={addZoneMode}
               />
-              <button
-                onClick={handleAnonymize}
-                disabled={isAnonymizing || zoneCount === 0}
-                className="rounded-lg bg-bw-accent px-4 py-2.5 text-sm font-medium text-white transition-opacity disabled:opacity-40"
-              >
-                {isAnonymizing
-                  ? "Anonymisation en cours…"
-                  : `Anonymiser (${zoneCount} zone${zoneCount > 1 ? "s" : ""})`}
-              </button>
-              <button
-                onClick={resetAll}
-                className="text-xs text-gray-500 hover:text-gray-300"
-              >
-                Annuler et repartir d'un autre fichier
-              </button>
+            </div>
+
+            <div className="lg:sticky lg:top-6 lg:self-start">
+              <div className="flex h-[70vh] flex-col gap-4">
+                <DetectionPanel
+                  detections={uploadResult.detections}
+                  included={included}
+                  onToggle={(id) =>
+                    setIncluded((prev) => ({ ...prev, [id]: !prev[id] }))
+                  }
+                  onToggleAll={(value) => {
+                    const next: Record<string, boolean> = {};
+                    for (const d of uploadResult.detections) next[d.id] = value;
+                    setIncluded(next);
+                  }}
+                  activePage={activePage}
+                  onJumpToPage={(page) => {
+                    setActivePage(page);
+                    document
+                      .getElementById(`page-${page}`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }}
+                  aiNameDetectionEnabled={false}
+                  onToggleAiNameDetection={() => {}}
+                />
+                <button
+                  onClick={handleAnonymize}
+                  disabled={isAnonymizing || zoneCount === 0}
+                  className="rounded-full bg-bw-pink px-4 py-2.5 font-heading text-sm font-semibold text-white shadow-bw transition-colors hover:bg-bw-pink-dark disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {isAnonymizing
+                    ? "Anonymisation en cours…"
+                    : `Anonymiser (${zoneCount} zone${zoneCount > 1 ? "s" : ""})`}
+                </button>
+                <button
+                  onClick={resetAll}
+                  className="font-body text-xs text-bw-cloudy hover:text-bw-text"
+                >
+                  Annuler et repartir d&apos;un autre fichier
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {step === "done" && resultUrl && (
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-bw-border bg-bw-panel p-10 text-center">
-          <p className="text-lg font-medium text-white">
-            PDF anonymisé généré avec succès.
-          </p>
-          <p className="max-w-md text-sm text-gray-400">
-            Les pages contenant des données masquées ont été converties en
-            image : le texte original n'est plus présent dans le fichier et ne
-            peut pas être récupéré par copier-coller.
-          </p>
-          <a
-            href={resultUrl}
-            download={resultFileName}
-            className="rounded-lg bg-bw-accent px-5 py-2.5 text-sm font-medium text-white"
-          >
-            Télécharger le PDF anonymisé
-          </a>
-          <button onClick={resetAll} className="text-xs text-gray-500 hover:text-gray-300">
-            Anonymiser un autre fichier
-          </button>
-        </div>
-      )}
-    </main>
+        {step === "done" && resultUrl && (
+          <div className="flex flex-col items-center gap-4 rounded-bw border border-bw-pink-soft bg-white p-10 text-center shadow-bw">
+            <p className="font-heading text-lg font-semibold text-bw-text">
+              PDF anonymisé généré avec succès.
+            </p>
+            <p className="max-w-md font-body text-sm text-bw-cloudy">
+              Les pages contenant des données masquées ont été converties en
+              image : le texte original n&apos;est plus présent dans le fichier et ne
+              peut pas être récupéré par copier-coller.
+            </p>
+            <a
+              href={resultUrl}
+              download={resultFileName}
+              className="rounded-full bg-bw-pink px-6 py-2.5 font-heading text-sm font-semibold text-white shadow-bw transition-colors hover:bg-bw-pink-dark"
+            >
+              Télécharger le PDF anonymisé
+            </a>
+            <button
+              onClick={resetAll}
+              className="font-body text-xs text-bw-cloudy hover:text-bw-text"
+            >
+              Anonymiser un autre fichier
+            </button>
+          </div>
+        )}
+      </main>
+
+      <footer className="bg-bw-text py-6 text-center font-heading text-xs text-bw-cloudy">
+        BONJOUR IA — Cabinet de Conseil IA &amp; Organisme de Formation<br />
+        SIRET 43358085900026 | N° DA : 83630345463 | Certifié Qualiopi<br />
+        19, Avenue Marx Dormoy — 63 000 Clermont-Ferrand | contact@bonjouria.fr | bonjouria.fr
+      </footer>
+    </div>
   );
 }

@@ -44,21 +44,21 @@ export default function DetectionPanel({
   }, {});
 
   return (
-    <div className="flex h-full flex-col gap-4 rounded-xl border border-bw-border bg-bw-panel p-4">
+    <div className="flex h-full flex-col gap-4 rounded-bw border border-bw-pink-soft bg-white p-4 shadow-bw">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">
+        <h2 className="font-heading text-sm font-semibold text-bw-text">
           Détections ({includedCount}/{detections.length} sélectionnées)
         </h2>
         <div className="flex gap-2 text-xs">
           <button
             onClick={() => onToggleAll(true)}
-            className="rounded border border-bw-border px-2 py-1 hover:border-bw-accent"
+            className="rounded-full border border-bw-cloudy/40 px-2 py-1 font-heading hover:border-bw-pink hover:text-bw-pink"
           >
             Tout cocher
           </button>
           <button
             onClick={() => onToggleAll(false)}
-            className="rounded border border-bw-border px-2 py-1 hover:border-bw-accent"
+            className="rounded-full border border-bw-cloudy/40 px-2 py-1 font-heading hover:border-bw-pink hover:text-bw-pink"
           >
             Tout décocher
           </button>
@@ -68,31 +68,31 @@ export default function DetectionPanel({
       <div className="flex-1 space-y-4 overflow-y-auto pr-1">
         {Object.entries(byType).map(([type, items]) => (
           <div key={type}>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">
+            <p className="mb-1 font-heading text-xs font-semibold uppercase tracking-wide text-bw-cloudy">
               {TYPE_LABELS[type as PiiType] ?? type} ({items.length})
             </p>
             <ul className="space-y-1">
               {items.map((d) => (
                 <li
                   key={d.id}
-                  className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${
-                    d.page === activePage ? "bg-white/5" : ""
+                  className={`flex items-center gap-2 rounded-lg px-2 py-1 font-body text-sm ${
+                    d.page === activePage ? "bg-bw-pink-soft/40" : ""
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={!!included[d.id]}
                     onChange={() => onToggle(d.id)}
-                    className="h-3.5 w-3.5 accent-bw-accent"
+                    className="h-3.5 w-3.5 accent-bw-pink"
                   />
                   <button
                     onClick={() => onJumpToPage(d.page)}
-                    className="flex-1 truncate text-left text-gray-300 hover:text-white"
+                    className="flex-1 truncate text-left text-bw-text hover:text-bw-pink"
                     title={d.text}
                   >
                     {d.text}
                   </button>
-                  <span className="shrink-0 text-[10px] text-gray-500">
+                  <span className="shrink-0 text-[10px] text-bw-cloudy">
                     p.{d.page + 1}
                   </span>
                 </li>
@@ -101,13 +101,13 @@ export default function DetectionPanel({
           </div>
         ))}
         {detections.length === 0 && (
-          <p className="text-sm text-gray-500">
+          <p className="font-body text-sm text-bw-cloudy">
             Aucune donnée personnelle détectée automatiquement.
           </p>
         )}
       </div>
 
-      <label className="flex items-start gap-2 rounded border border-bw-border p-2 text-xs text-gray-500">
+      <label className="flex items-start gap-2 rounded-lg border border-bw-cloudy/30 p-2 font-body text-xs text-bw-cloudy">
         <input
           type="checkbox"
           checked={aiNameDetectionEnabled}

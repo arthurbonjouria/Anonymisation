@@ -37,12 +37,12 @@ export default function UploadZone({ onFileSelected, disabled }: UploadZoneProps
         if (!disabled) handleFiles(e.dataTransfer.files);
       }}
       onClick={() => !disabled && inputRef.current?.click()}
-      className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-12 text-center transition-colors ${
+      className={`flex flex-col items-center justify-center gap-3 rounded-bw border-2 border-dashed p-12 text-center transition-colors ${
         disabled
-          ? "cursor-not-allowed border-bw-border bg-bw-panel/40 opacity-60"
+          ? "cursor-not-allowed border-bw-cloudy/30 bg-white/40 opacity-60"
           : isDragging
-          ? "cursor-pointer border-bw-accent bg-bw-accent/10"
-          : "cursor-pointer border-bw-border bg-bw-panel hover:border-bw-accent/60"
+          ? "cursor-pointer border-bw-pink bg-bw-pink-soft/40"
+          : "cursor-pointer border-bw-cloudy/40 bg-white hover:border-bw-pink"
       }`}
     >
       <input
@@ -60,15 +60,15 @@ export default function UploadZone({ onFileSelected, disabled }: UploadZoneProps
         fill="none"
         stroke="currentColor"
         strokeWidth="1.5"
-        className="text-bw-accent"
+        className="text-bw-pink"
       >
         <path d="M12 16V4m0 0L7 9m5-5 5 5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <p className="text-sm text-gray-300">
-        Glissez-déposez un PDF ici, ou <span className="text-bw-accent underline">cliquez pour choisir un fichier</span>
+      <p className="font-body text-sm text-bw-text">
+        Glissez-déposez un PDF ici, ou <span className="text-bw-pink underline">cliquez pour choisir un fichier</span>
       </p>
-      <p className="text-xs text-gray-500">
+      <p className="font-body text-xs text-bw-cloudy">
         Traitement 100% local — rien n'est envoyé à un service tiers.
       </p>
     </div>

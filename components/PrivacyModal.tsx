@@ -52,7 +52,7 @@ export default function PrivacyModal() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-bw-border bg-bw-panel text-sm text-gray-400 shadow-lg hover:border-bw-accent hover:text-white"
+        className="fixed bottom-4 right-4 z-40 flex h-9 w-9 items-center justify-center rounded-full border border-bw-pink-soft bg-white font-heading text-sm text-bw-cloudy shadow-bw hover:border-bw-pink hover:text-bw-pink"
         title="Confidentialité et fonctionnement"
         aria-label="Confidentialité et fonctionnement"
       >
@@ -61,40 +61,46 @@ export default function PrivacyModal() {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-bw-text/60 p-4"
           onClick={close}
         >
           <div
-            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-bw-border bg-bw-panel p-6 shadow-2xl"
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-bw border border-bw-pink-soft bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-semibold text-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logos/bonjouria-logo-noir-et-rose.svg"
+              alt="BONJOUR IA"
+              className="mb-4 h-8 w-auto"
+            />
+            <h2 className="font-heading text-lg font-bold text-bw-text">
               Vos fichiers ne sont jamais enregistrés
             </h2>
-            <p className="mt-2 text-sm text-gray-300">
-              Le PDF que vous déposez est traité uniquement en mémoire, sur ce
-              serveur — jamais écrit sur un disque, jamais envoyé à un service
-              tiers ou à une IA cloud. Il est supprimé dès que vous téléchargez
-              le résultat, et au plus tard 15 minutes après l'upload.
+            <p className="mt-2 font-body text-sm text-bw-text/80">
+              Le PDF que vous déposez est traité uniquement en mémoire, le
+              temps de la requête — jamais écrit sur un disque, jamais envoyé
+              à un service tiers ou à une IA cloud. Il disparaît aussitôt le
+              traitement terminé.
             </p>
 
-            <h3 className="mt-5 text-sm font-semibold uppercase tracking-wide text-gray-400">
-              Comment fonctionne l'anonymisation
+            <h3 className="mt-5 font-heading text-sm font-semibold uppercase tracking-wide text-bw-pink">
+              Comment fonctionne l&apos;anonymisation
             </h3>
             <ol className="mt-3 space-y-3">
               {STEPS.map((step) => (
-                <li key={step.title} className="text-sm">
-                  <p className="font-medium text-gray-200">{step.title}</p>
-                  <p className="text-gray-400">{step.text}</p>
+                <li key={step.title} className="font-body text-sm">
+                  <p className="font-heading font-medium text-bw-text">{step.title}</p>
+                  <p className="text-bw-cloudy">{step.text}</p>
                 </li>
               ))}
             </ol>
 
             <button
               onClick={close}
-              className="mt-6 w-full rounded-lg bg-bw-accent px-4 py-2.5 text-sm font-medium text-white"
+              className="mt-6 w-full rounded-full bg-bw-pink px-4 py-2.5 font-heading text-sm font-semibold text-white shadow-bw hover:bg-bw-pink-dark"
             >
-              J'ai compris
+              J&apos;ai compris
             </button>
           </div>
         </div>

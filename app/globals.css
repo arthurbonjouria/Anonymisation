@@ -3,28 +3,28 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
-  background-color: #0f1115;
-  color: #e6e8ec;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #F4F3EE;
+  color: #2D2D2D;
+  font-family: var(--font-lora);
 }
 
 .detection-box {
   position: absolute;
-  border: 2px solid rgba(239, 91, 91, 0.9);
-  background: rgba(239, 91, 91, 0.18);
+  border: 2px solid rgba(232, 57, 103, 0.85);
+  background: rgba(232, 57, 103, 0.16);
   cursor: pointer;
 }
 
 .detection-box.excluded {
-  border-color: rgba(148, 155, 168, 0.7);
-  background: rgba(148, 155, 168, 0.08);
+  border-color: rgba(177, 173, 161, 0.85);
+  background: rgba(177, 173, 161, 0.12);
 }
 
 .detection-box.manual {
-  border-color: rgba(91, 141, 239, 0.9);
-  background: rgba(91, 141, 239, 0.18);
+  border-color: rgba(45, 45, 45, 0.85);
+  background: rgba(45, 45, 45, 0.14);
 }
