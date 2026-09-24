@@ -33,13 +33,13 @@ export default function Home() {
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultFileName, setResultFileName] = useState<string>("document_anonymise.pdf");
 
-  // Disponibilité d'un Ollama local (voir /api/ollama-status) : null tant
-  // que non vérifié, false si injoignable (cas normal sur Vercel), true si
-  // détecté sur cette machine.
-  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
+  // Le mode d'analyse est décidé UNE SEULE FOIS, à l'ouverture du site, en
+  // fonction de la disponibilité réelle d'un Ollama local — jamais par une
+  // bascule manuelle de l'utilisateur. "ai" : uniquement le LLM local
+  // (aucune regex). "regex" : détection par règles, seul mode possible sans
+  // Ollama (systématique sur le déploiement Vercel).
+  const [mode, setMode] = useState<"regex" | "ai" | null>(null);
   const [ollamaModel, setOllamaModel] = useState<string | undefined>(undefined);
-  const [useOllama, setUseOllama] = useState(false);
-  const [isReanalyzing, setIsReanalyzing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,35 +47,32 @@ export default function Home() {
       .then((res) => res.json())
       .then((status: { available: boolean; model: string }) => {
         if (cancelled) return;
-        setOllamaAvailable(status.available);
+        setMode(status.available ? "ai" : "regex");
         setOllamaModel(status.model);
       })
       .catch(() => {
-        if (!cancelled) setOllamaAvailable(false);
+        if (!cancelled) setMode("regex");
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const analyzeFile = useCallback(async (file: File, withOllama: boolean) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("useOllama", withOllama ? "true" : "false");
-    const res = await fetch("/api/upload", { method: "POST", body: formData });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || "Échec de l'analyse du PDF.");
-    }
-    return (await res.json()) as UploadResponse;
-  }, []);
-
   const handleFileSelected = useCallback(
     async (file: File) => {
+      if (!mode) return;
       setError(null);
       setIsUploading(true);
       try {
-        const data = await analyzeFile(file, useOllama);
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("mode", mode);
+        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || "Échec de l'analyse du PDF.");
+        }
+        const data: UploadResponse = await res.json();
         setUploadResult(data);
         setOriginalFile(file);
 
@@ -92,36 +89,7 @@ export default function Home() {
         setIsUploading(false);
       }
     },
-    [analyzeFile, useOllama]
-  );
-
-  // Relance l'analyse du même fichier avec/sans le renfort Ollama, en gardant
-  // les choix déjà faits par l'utilisateur pour les détections identiques
-  // (même id) — seules les nouvelles détections apportées par Ollama sont
-  // ajoutées, cochées par défaut selon le même seuil de confiance.
-  const handleToggleOllama = useCallback(
-    async (enabled: boolean) => {
-      setUseOllama(enabled);
-      if (!originalFile) return;
-      setIsReanalyzing(true);
-      setError(null);
-      try {
-        const data = await analyzeFile(originalFile, enabled);
-        setUploadResult(data);
-        setIncluded((prev) => {
-          const next: Record<string, boolean> = {};
-          for (const d of data.detections as Detection[]) {
-            next[d.id] = d.id in prev ? prev[d.id] : d.confidence >= DEFAULT_INCLUDE_THRESHOLD;
-          }
-          return next;
-        });
-      } catch (err: any) {
-        setError(err.message || "Une erreur est survenue.");
-      } finally {
-        setIsReanalyzing(false);
-      }
-    },
-    [analyzeFile, originalFile]
+    [mode]
   );
 
   const handleAnonymize = useCallback(async () => {
@@ -164,7 +132,6 @@ export default function Home() {
     setManualZones([]);
     setResultUrl(null);
     setError(null);
-    setUseOllama(false);
   }, []);
 
   const zoneCount = useMemo(() => {
@@ -200,6 +167,23 @@ export default function Home() {
             Détection et suppression irréversible des données personnelles,
             entièrement en local — rien n&apos;est jamais envoyé à un service tiers.
           </p>
+          <div className="mt-3">
+            {mode === null && (
+              <span className="font-body text-xs text-bw-cloudy">
+                Vérification du mode d&apos;analyse…
+              </span>
+            )}
+            {mode === "ai" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-bw-pink-soft bg-bw-pink-soft/40 px-3 py-1 font-heading text-xs font-medium text-bw-pink">
+                Analyse par IA locale (Ollama — {ollamaModel})
+              </span>
+            )}
+            {mode === "regex" && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-bw-cloudy/30 bg-white px-3 py-1 font-heading text-xs font-medium text-bw-cloudy">
+                Analyse par règles (Ollama non détecté sur cette machine)
+              </span>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -209,7 +193,7 @@ export default function Home() {
         )}
 
         {step === "upload" && (
-          <UploadZone onFileSelected={handleFileSelected} disabled={isUploading} />
+          <UploadZone onFileSelected={handleFileSelected} disabled={isUploading || mode === null} />
         )}
         {isUploading && (
           <p className="mt-4 font-body text-sm text-bw-cloudy">
@@ -273,19 +257,10 @@ export default function Home() {
                       .getElementById(`page-${page}`)
                       ?.scrollIntoView({ behavior: "smooth", block: "center" });
                   }}
-                  aiNameDetectionEnabled={useOllama}
-                  onToggleAiNameDetection={handleToggleOllama}
-                  ollamaAvailable={ollamaAvailable}
-                  ollamaModel={ollamaModel}
                 />
-                {isReanalyzing && (
-                  <p className="font-body text-xs text-bw-cloudy">
-                    Nouvelle analyse avec Ollama en cours…
-                  </p>
-                )}
                 <button
                   onClick={handleAnonymize}
-                  disabled={isAnonymizing || isReanalyzing || zoneCount === 0}
+                  disabled={isAnonymizing || zoneCount === 0}
                   className="rounded-full bg-bw-pink px-4 py-2.5 font-heading text-sm font-semibold text-white shadow-bw transition-colors hover:bg-bw-pink-dark disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isAnonymizing

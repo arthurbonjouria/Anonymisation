@@ -9,11 +9,6 @@ interface DetectionPanelProps {
   onToggleAll: (included: boolean) => void;
   activePage: number;
   onJumpToPage: (page: number) => void;
-  aiNameDetectionEnabled: boolean;
-  onToggleAiNameDetection: (enabled: boolean) => void;
-  /** null = statut pas encore connu, sinon disponibilité réelle d'Ollama. */
-  ollamaAvailable: boolean | null;
-  ollamaModel?: string;
 }
 
 const TYPE_LABELS: Record<PiiType, string> = {
@@ -36,10 +31,6 @@ export default function DetectionPanel({
   onToggleAll,
   activePage,
   onJumpToPage,
-  aiNameDetectionEnabled,
-  onToggleAiNameDetection,
-  ollamaAvailable,
-  ollamaModel,
 }: DetectionPanelProps) {
   const includedCount = detections.filter((d) => included[d.id]).length;
 
@@ -111,35 +102,6 @@ export default function DetectionPanel({
           </p>
         )}
       </div>
-
-      <label
-        className={`flex items-start gap-2 rounded-lg border p-2 font-body text-xs ${
-          ollamaAvailable
-            ? "border-bw-pink-soft text-bw-text"
-            : "border-bw-cloudy/30 text-bw-cloudy"
-        }`}
-      >
-        <input
-          type="checkbox"
-          checked={aiNameDetectionEnabled}
-          onChange={(e) => onToggleAiNameDetection(e.target.checked)}
-          disabled={!ollamaAvailable}
-          className="mt-0.5 h-3.5 w-3.5 accent-bw-pink"
-        />
-        <span>
-          Améliorer la détection des noms via Ollama (IA locale).{" "}
-          {ollamaAvailable === null && "Vérification de la disponibilité d'Ollama…"}
-          {ollamaAvailable === true && (
-            <>
-              Ollama détecté (modèle <code>{ollamaModel}</code>) — traitement
-              100% local sur cette machine, jamais envoyé sur Internet. Un
-              petit modèle reste faillible : vérifiez toujours l'aperçu.
-            </>
-          )}
-          {ollamaAvailable === false &&
-            "Indisponible ici (Ollama non détecté sur cette machine — normal si le site est hébergé sur Vercel)."}
-        </span>
-      </label>
     </div>
   );
 }

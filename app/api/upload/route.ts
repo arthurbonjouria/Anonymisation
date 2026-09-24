@@ -36,10 +36,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Case à cocher "Améliorer la détection des noms via IA" côté client :
-    // n'a d'effet que si un Ollama local répond réellement (voir
-    // /api/ollama-status et lib/ollama-detect.ts) — sinon ignoré sans erreur.
-    const useOllama = formData.get("useOllama") === "true";
+    // Choisi automatiquement par le site à l'ouverture ("ai" si un Ollama
+    // local répond, "regex" sinon) — voir app/page.tsx et
+    // /api/ollama-status. Si "ai" est demandé mais qu'Ollama ne répond plus
+    // (coupé entre-temps), lib/ollama-detect.ts renvoie simplement aucune
+    // détection plutôt que d'échouer ; mieux vaut le signaler que de
+    // basculer silencieusement vers les regex que l'utilisateur ne veut
+    // justement plus.
+    const modeParam = formData.get("mode");
+    const mode = modeParam === "ai" ? "ai" : "regex";
 
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -48,7 +53,10 @@ export async function POST(req: Request) {
     const pageCount = pdfjsDoc.numPages as number;
 
     const pages: PageInfo[] = [];
-    const detections: Detection[] = [];
+    // Étape 1 : extraction/rendu/OCR de chaque page, SÉQUENTIELLEMENT (ça
+    // partage le même document pdfjs et le même canvas natif — ce n'est de
+    // toute façon pas le goulot d'étranglement, contrairement à l'appel IA).
+    const pageContexts: { index: number; text: string; items: PositionedTextItem[] }[] = [];
 
     for (let index = 0; index < pageCount; index++) {
       const native = await extractNativeTextForPage(pdfjsDoc, index);
@@ -65,9 +73,7 @@ export async function POST(req: Request) {
         text = buildPageText(items);
       }
 
-      const pageDetections = await detectPiiOnPage(index, text, items, useOllama);
-      detections.push(...pageDetections);
-
+      pageContexts.push({ index, text, items });
       pages.push({
         index,
         width: rendered.width / PREVIEW_SCALE,
@@ -75,6 +81,25 @@ export async function POST(req: Request) {
         imageDataUrl: canvasToPngDataUrl(rendered.canvas),
         isScanned,
       });
+    }
+
+    // Étape 2 : détection PII, page par page, SÉQUENTIELLEMENT.
+    //
+    // Tentative précédente : lancer tous les appels IA en parallèle
+    // (Promise.all) pour aller plus vite. Résultat en test réel sur un
+    // document de 7 pages : SEULE la première page à répondre obtenait un
+    // résultat, toutes les autres revenaient bredouilles. Cause : Ollama, sur
+    // une machine grand public, ne traite qu'UNE requête `generate` à la
+    // fois (un seul modèle chargé en mémoire) — envoyer 7 requêtes en même
+    // temps les mettait en file d'attente côté Ollama, et le timeout de
+    // CHAQUE requête (démarré côté client dès l'envoi, pas quand Ollama
+    // commence réellement à la traiter) expirait avant que son tour
+    // n'arrive. Silence radio sur la quasi-totalité du document — bien pire
+    // que la lenteur du séquentiel.
+    const detections: Detection[] = [];
+    for (const ctx of pageContexts) {
+      const pageDetections = await detectPiiOnPage(ctx.index, ctx.text, ctx.items, mode);
+      detections.push(...pageDetections);
     }
 
     // Pas de session, pas de stockage : le fichier original n'est jamais
@@ -85,6 +110,7 @@ export async function POST(req: Request) {
       fileName: file.name,
       pages,
       detections,
+      mode,
     };
 
     return NextResponse.json(response);

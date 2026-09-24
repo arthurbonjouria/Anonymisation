@@ -1,28 +1,26 @@
 /**
- * Détection de noms assistée par un LLM local via Ollama.
+ * Détection de données personnelles par un LLM local via Ollama — seule
+ * source de détection quand ce mode est actif (voir `lib/pii-detect.ts` :
+ * mode "ai" vs "regex").
  *
  * Optionnel et 100% local : n'a de sens QUE quand l'application tourne sur la
  * même machine qu'Ollama (usage local, `npm run dev`/`npm run start`). Un
  * serveur Vercel n'a aucun moyen d'atteindre `localhost:11434` sur le PC de
- * quelqu'un — cette fonctionnalité est donc automatiquement inactive une
- * fois déployée sur Vercel, sans configuration à faire : `isOllamaAvailable`
- * échoue silencieusement (timeout court) et l'app retombe sur la détection
- * par règles (regex + `compromise`), qui reste la seule utilisée en ligne.
+ * quelqu'un — ce mode est donc automatiquement indisponible une fois
+ * déployé sur Vercel : `getOllamaStatus` échoue silencieusement (timeout
+ * court) et l'app choisit alors le mode "regex" à l'ouverture du site (voir
+ * `app/page.tsx`), seul mode qui fonctionne sans Ollama.
  *
- * Rôle : COMPLÉMENT à la détection par règles, jamais un remplacement. Les
- * regex (email, téléphone, IBAN, NIR...) sont déterministes et fiables :
- * elles restent seules responsables de ces types. Le LLM ne sert qu'à
- * repérer des noms de personnes que la regex + `compromise` auraient
- * manqués (noms rares, tournures inhabituelles, contexte...). Chaque nom
- * renvoyé par le modèle est revérifié par recherche exacte dans le texte
- * source : un nom halluciné (qui n'apparaît pas tel quel dans le document)
- * est automatiquement ignoré.
+ * Chaque élément renvoyé par le modèle est revérifié par recherche EXACTE
+ * dans le texte source : un élément haluciné (absent du document) est
+ * automatiquement ignoré, quel que soit son type.
  *
- * Avec un petit modèle local (1B-3B), la qualité reste limitée — c'est
- * documenté clairement dans l'UI : cette couche AIDE, elle ne garantit pas
- * une détection parfaite à elle seule. La relecture humaine dans l'aperçu
- * reste indispensable.
+ * Avec un petit modèle local (1B-4B), la qualité reste limitée — c'est
+ * documenté clairement dans l'UI. La relecture humaine dans l'aperçu reste
+ * indispensable avant de valider l'anonymisation.
  */
+
+import type { PiiType } from "./types";
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 // Optionnel : force un modèle précis (doit correspondre exactement à
@@ -45,11 +43,20 @@ function pickModel(models: string[]): string | null {
   return instruct || models[0];
 }
 
-// Délais courts : si Ollama n'est pas lancé (ex: déploiement Vercel, ou
-// simplement pas démarré localement), on ne doit jamais ralentir/bloquer le
-// reste de la détection en attendant une connexion qui n'aboutira pas.
+// Délai court pour la simple vérification de disponibilité (si Ollama n'est
+// pas lancé — ex: déploiement Vercel — on ne doit jamais bloquer en
+// attendant une connexion qui n'aboutira pas).
 const AVAILABILITY_TIMEOUT_MS = 1200;
-const GENERATE_TIMEOUT_MS = 25000;
+
+// Délai généreux pour la génération elle-même : l'inférence sur CPU/GPU
+// grand public est loin d'être parfaitement constante d'un appel à l'autre
+// (charge système, autres process, taille du texte...). Constaté en test
+// réel : un même prompt a pris tantôt 31s, tantôt plus de 45s. Un timeout
+// trop serré ne fait pas "planter proprement" — il fait silencieusement
+// disparaître la détection sur la page concernée (dégradation silencieuse
+// voulue pour ne jamais faire échouer tout l'upload), ce qui est bien pire
+// pour un outil d'anonymisation que d'attendre plus longtemps.
+const GENERATE_TIMEOUT_MS = 180000;
 
 export interface OllamaStatus {
   available: boolean;
@@ -95,14 +102,41 @@ export async function getOllamaStatus(): Promise<OllamaStatus> {
   }
 }
 
-const PROMPT_INSTRUCTIONS = `Tu es un assistant qui repère les NOMS DE PERSONNES PHYSIQUES (prénom et/ou nom de famille d'individus) dans un extrait de document français.
+// Types que le modèle est autorisé à renvoyer, alignés sur `PiiType`
+// (lib/types.ts) pour que le reste du pipeline (boîtes, couleurs, libellés
+// dans l'UI) fonctionne à l'identique, que la détection vienne des regex ou
+// du LLM.
+const ALLOWED_TYPES: PiiType[] = [
+  "name",
+  "email",
+  "phone",
+  "iban",
+  "nir",
+  "postal_address",
+  "postal_code",
+  "date_naissance",
+  "custom",
+];
+
+const PROMPT_INSTRUCTIONS = `Tu es un assistant spécialisé dans la détection de données personnelles (RGPD) dans un extrait de document français, pour anonymisation.
+
+Repère TOUTES les informations suivantes concernant des PERSONNES PHYSIQUES :
+- name : prénom et/ou nom de famille d'un individu (partie, particulier, signataire...)
+- email : adresse email
+- phone : numéro de téléphone
+- iban : coordonnées bancaires (IBAN)
+- nir : numéro de sécurité sociale français
+- postal_address : adresse postale complète (numéro + voie, éventuellement ville/code postal)
+- postal_code : code postal isolé (5 chiffres)
+- date_naissance : UNIQUEMENT une date de naissance (repérable par un contexte "né(e) le..."). Ne PAS inclure les autres dates (audience, courrier, signature, jugement...), ce ne sont pas des données personnelles.
+- custom : tout autre identifiant personnel évident (numéro de pièce d'identité, de passeport, de client...)
 
 Règles strictes :
-- Ne renvoie QUE des noms qui apparaissent MOT POUR MOT dans le texte fourni (même casse, mêmes espaces).
-- N'invente jamais de nom absent du texte.
-- Inclus les noms des parties, particuliers, signataires mentionnés.
-- N'inclus PAS les noms de lieux, de sociétés, de tribunaux, de rues.
-- Réponds UNIQUEMENT avec un objet JSON de la forme {"names": ["Nom1", "Nom2"]}, sans aucun autre texte.
+- Ne renvoie QUE des extraits qui apparaissent MOT POUR MOT dans le texte fourni (même casse, mêmes espaces, aucune reformulation).
+- N'invente jamais un extrait absent du texte.
+- N'inclus PAS les noms de lieux/villes, de sociétés, de tribunaux, de rues seules (sans numéro), ni les noms de juges/greffiers agissant dans leur fonction officielle.
+- Si rien n'est trouvé pour une catégorie, ne l'inclus simplement pas.
+- Réponds UNIQUEMENT avec un objet JSON de la forme {"items": [{"type": "name", "text": "Jean Dupont"}, {"type": "email", "text": "jean@exemple.fr"}]}, sans aucun autre texte, sans explication.
 
 Texte à analyser :
 """
@@ -113,14 +147,20 @@ interface GenerateResponse {
   response?: string;
 }
 
+export interface OllamaPiiMatch {
+  type: PiiType;
+  text: string;
+  start: number;
+  end: number;
+}
+
 /**
- * Demande au modèle local d'extraire les noms de personnes d'un extrait de
- * texte, et ne renvoie que ceux qui apparaissent réellement (recherche
- * exacte) dans ce texte — un nom halluciné par le modèle est écarté.
+ * Demande au modèle local d'extraire toutes les données personnelles d'un
+ * extrait de texte, et ne renvoie que celles qui apparaissent réellement
+ * (recherche exacte) dans ce texte — un extrait halluciné par le modèle est
+ * écarté, quel que soit son type annoncé.
  */
-export async function detectNamesWithOllama(
-  text: string
-): Promise<{ text: string; start: number; end: number }[]> {
+export async function detectPiiWithOllama(text: string): Promise<OllamaPiiMatch[]> {
   if (!text.trim()) return [];
 
   const status = await getOllamaStatus();
@@ -148,32 +188,39 @@ export async function detectNamesWithOllama(
     if (!res.ok) return [];
     const data = (await res.json()) as GenerateResponse;
     raw = data.response ?? "";
-  } catch {
+  } catch (err) {
     // Ollama pas lancé, timeout, modèle inconnu... on dégrade silencieusement
-    // vers "aucun résultat supplémentaire" plutôt que de faire échouer toute
-    // la détection PII à cause d'une couche optionnelle.
+    // vers "aucun résultat" plutôt que de faire planter tout l'upload à
+    // cause d'un problème sur cette seule couche. On journalise quand même
+    // (sans bloquer) pour pouvoir diagnostiquer une page qui ressort vide.
+    console.warn("[ollama-detect] échec de la détection IA sur cette page :", err);
     return [];
   }
 
-  let names: unknown;
+  let items: unknown;
   try {
     const parsed = JSON.parse(raw);
-    names = parsed?.names;
+    items = parsed?.items;
   } catch {
     return [];
   }
-  if (!Array.isArray(names)) return [];
+  if (!Array.isArray(items)) return [];
 
-  const matches: { text: string; start: number; end: number }[] = [];
-  for (const candidate of names) {
+  const matches: OllamaPiiMatch[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const type = (item as any).type;
+    const candidate = (item as any).text;
     if (typeof candidate !== "string" || candidate.trim().length < 2) continue;
+    if (!ALLOWED_TYPES.includes(type)) continue;
+
     // Le modèle peut légèrement reformuler malgré la consigne : on ne garde
     // que ce qui apparaît EXACTEMENT dans le texte source (aucune confiance
-    // aveugle dans la sortie du LLM).
+    // aveugle dans la sortie du LLM, quel que soit le type annoncé).
     let searchFrom = 0;
     let idx = text.indexOf(candidate, searchFrom);
     while (idx !== -1) {
-      matches.push({ text: candidate, start: idx, end: idx + candidate.length });
+      matches.push({ type, text: candidate, start: idx, end: idx + candidate.length });
       searchFrom = idx + candidate.length;
       idx = text.indexOf(candidate, searchFrom);
     }

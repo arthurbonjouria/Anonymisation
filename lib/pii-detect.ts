@@ -10,7 +10,18 @@ import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 import path from "path";
 import { PII_PATTERNS } from "./pii-patterns";
 import { detectNames } from "./name-detect";
+import { detectPiiWithOllama } from "./ollama-detect";
 import type { Detection, NormalizedBox, PiiType } from "./types";
+
+/**
+ * Mode de détection, choisi une fois par le site à l'ouverture (voir
+ * `app/page.tsx` + `/api/ollama-status`), jamais par bascule manuelle :
+ * - "ai"    : uniquement le LLM local (Ollama) — aucune regex, aucun
+ *             `compromise`. N'a de sens que si Ollama répond réellement.
+ * - "regex" : détection par règles (regex + `compromise`), utilisée quand
+ *             Ollama n'est pas disponible (systématique sur Vercel).
+ */
+export type DetectionMode = "regex" | "ai";
 
 /** Un segment de texte positionné sur la page (mot ou run de texte), avec ses
  * offsets dans le texte concaténé de la page. */
@@ -81,14 +92,32 @@ function runRegexPatterns(text: string): RawMatch[] {
   return matches;
 }
 
-async function runNameDetection(text: string, useOllama: boolean): Promise<RawMatch[]> {
-  const names = await detectNames(text, useOllama);
-  return names.map((n) => ({
+function runNameDetection(text: string): RawMatch[] {
+  return detectNames(text).map((n) => ({
     type: "name" as PiiType,
     text: n.text,
     start: n.start,
     end: n.end,
     confidence: n.confidence,
+    source: "nlp" as const,
+  }));
+}
+
+// Confiance uniforme appliquée à tout ce que le LLM trouve : en mode "ai",
+// il n'y a pas d'autre signal à combiner (pas de regex, pas de validation de
+// clé de contrôle) — 0.65 reste au-dessus du seuil d'inclusion par défaut
+// dans l'UI, tout en restant modéré vu la fiabilité limitée d'un petit
+// modèle local.
+const AI_MODE_CONFIDENCE = 0.65;
+
+async function runAiDetection(text: string): Promise<RawMatch[]> {
+  const items = await detectPiiWithOllama(text);
+  return items.map((m) => ({
+    type: m.type,
+    text: m.text,
+    start: m.start,
+    end: m.end,
+    confidence: AI_MODE_CONFIDENCE,
     source: "nlp" as const,
   }));
 }
@@ -273,12 +302,13 @@ export async function detectPiiOnPage(
   pageIndex: number,
   pageText: string,
   items: PositionedTextItem[],
-  useOllama: boolean = false
+  mode: DetectionMode = "regex"
 ): Promise<Detection[]> {
-  const raw = dedupeNested([
-    ...runRegexPatterns(pageText),
-    ...(await runNameDetection(pageText, useOllama)),
-  ]);
+  const raw = dedupeNested(
+    mode === "ai"
+      ? await runAiDetection(pageText)
+      : [...runRegexPatterns(pageText), ...runNameDetection(pageText)]
+  );
 
   const detections: Detection[] = [];
   for (const m of raw) {

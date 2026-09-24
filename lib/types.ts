@@ -40,6 +40,8 @@ export interface UploadResponse {
   fileName: string;
   pages: PageInfo[];
   detections: Detection[];
+  /** Mode réellement utilisé pour cette analyse (voir lib/pii-detect.ts). */
+  mode: "regex" | "ai";
 }
 
 export interface AnonymizeZone {
