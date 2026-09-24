@@ -175,7 +175,7 @@ export default function Home() {
             )}
             {mode === "ai" && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-bw-pink-soft bg-bw-pink-soft/40 px-3 py-1 font-heading text-xs font-medium text-bw-pink">
-                Analyse par IA locale (Ollama — {ollamaModel})
+                Analyse hybride : règles + IA locale (Ollama — {ollamaModel})
               </span>
             )}
             {mode === "regex" && (

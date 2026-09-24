@@ -16,10 +16,19 @@ import type { Detection, NormalizedBox, PiiType } from "./types";
 /**
  * Mode de détection, choisi une fois par le site à l'ouverture (voir
  * `app/page.tsx` + `/api/ollama-status`), jamais par bascule manuelle :
- * - "ai"    : uniquement le LLM local (Ollama) — aucune regex, aucun
- *             `compromise`. N'a de sens que si Ollama répond réellement.
- * - "regex" : détection par règles (regex + `compromise`), utilisée quand
- *             Ollama n'est pas disponible (systématique sur Vercel).
+ * - "ai"    : HYBRIDE — les regex (lib/pii-patterns.ts) restent le filet de
+ *             sécurité déterministe pour tout ce qui a un format fixe
+ *             (email, téléphone, IBAN, NIR, code postal, date de
+ *             naissance) ; le LLM local (Ollama) vient EN PLUS pour les
+ *             noms et adresses en texte libre, qui demandent de comprendre
+ *             le contexte. N'a de sens que si Ollama répond réellement.
+ *             (Une version antérieure retirait complètement les regex en
+ *             mode "ai" ; testée en conditions réelles, elle a omis des
+ *             IBAN/téléphones/emails entiers sur certaines pages ET
+ *             sur-masqué des fragments de mots ailleurs — voir le
+ *             commentaire en tête de lib/ollama-detect.ts.)
+ * - "regex" : détection par règles (regex + `compromise`) seule, utilisée
+ *             quand Ollama n'est pas disponible (systématique sur Vercel).
  */
 export type DetectionMode = "regex" | "ai";
 
@@ -120,6 +129,22 @@ async function runAiDetection(text: string): Promise<RawMatch[]> {
     confidence: AI_MODE_CONFIDENCE,
     source: "nlp" as const,
   }));
+}
+
+/** En mode hybride, les regex et le LLM peuvent parfois trouver EXACTEMENT
+ * le même extrait (ex: une adresse repérée à la fois par ADDRESS_REGEX et
+ * par l'IA) : on ne garde qu'une occurrence par (type, start, end) plutôt que
+ * de faire apparaître un doublon dans la liste des détections. */
+function dedupeExact(matches: RawMatch[]): RawMatch[] {
+  const seen = new Map<string, RawMatch>();
+  for (const m of matches) {
+    const key = `${m.type}|${m.start}|${m.end}`;
+    const existing = seen.get(key);
+    if (!existing || m.confidence > existing.confidence) {
+      seen.set(key, m);
+    }
+  }
+  return Array.from(seen.values());
 }
 
 /** Supprime les matches strictement contenus dans un match plus large de
@@ -304,11 +329,11 @@ export async function detectPiiOnPage(
   items: PositionedTextItem[],
   mode: DetectionMode = "regex"
 ): Promise<Detection[]> {
-  const raw = dedupeNested(
+  const combined =
     mode === "ai"
-      ? await runAiDetection(pageText)
-      : [...runRegexPatterns(pageText), ...runNameDetection(pageText)]
-  );
+      ? dedupeExact([...runRegexPatterns(pageText), ...(await runAiDetection(pageText))])
+      : [...runRegexPatterns(pageText), ...runNameDetection(pageText)];
+  const raw = dedupeNested(combined);
 
   const detections: Detection[] = [];
   for (const m of raw) {
