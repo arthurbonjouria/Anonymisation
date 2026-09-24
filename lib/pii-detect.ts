@@ -81,8 +81,9 @@ function runRegexPatterns(text: string): RawMatch[] {
   return matches;
 }
 
-function runNameDetection(text: string): RawMatch[] {
-  return detectNames(text).map((n) => ({
+async function runNameDetection(text: string, useOllama: boolean): Promise<RawMatch[]> {
+  const names = await detectNames(text, useOllama);
+  return names.map((n) => ({
     type: "name" as PiiType,
     text: n.text,
     start: n.start,
@@ -268,14 +269,15 @@ function boxesForRange(
     .filter((b): b is NormalizedBox => b !== null);
 }
 
-export function detectPiiOnPage(
+export async function detectPiiOnPage(
   pageIndex: number,
   pageText: string,
-  items: PositionedTextItem[]
-): Detection[] {
+  items: PositionedTextItem[],
+  useOllama: boolean = false
+): Promise<Detection[]> {
   const raw = dedupeNested([
     ...runRegexPatterns(pageText),
-    ...runNameDetection(pageText),
+    ...(await runNameDetection(pageText, useOllama)),
   ]);
 
   const detections: Detection[] = [];

@@ -52,10 +52,49 @@ tiers.
   un fonctionnement strictement hors-ligne, pré-téléchargez les fichiers
   `fra.traineddata` / `eng.traineddata` et configurez `langPath` dans
   [`lib/ocr.ts`](lib/ocr.ts) (`createWorker("fra+eng", 1, { langPath: "..." })`).
-- Une case "Améliorer la détection des noms via IA" est visible dans l'UI
-  mais **désactivée par défaut et non branchée à un service externe**,
-  conformément à l'exigence de confidentialité : elle documente simplement
-  l'option pour une éventuelle évolution future avec un modèle self-hosted.
+- Une case "Améliorer la détection des noms via Ollama (IA locale)" permet de
+  renforcer la détection des noms avec un modèle tournant en local via
+  [Ollama](https://ollama.com) — voir section dédiée ci-dessous. Elle reste
+  décochée/grisée tant qu'aucun Ollama n'est détecté, et n'appelle jamais un
+  service cloud : soit c'est un modèle qui tourne sur la machine, soit rien.
+
+## Détection renforcée par IA locale (Ollama)
+
+La détection par regex + `compromise` peut manquer certains noms (prénom
+seul sans nom de famille, nom rare, tournure inhabituelle). Si
+[Ollama](https://ollama.com) tourne sur la même machine que l'application,
+une case à cocher apparaît dans le panneau de détections pour lui demander
+un second passage, spécifiquement pour repérer des noms de personnes
+manqués par les règles.
+
+**Comment ça marche** :
+- Au chargement, l'app interroge `http://localhost:11434/api/tags` (voir
+  [`app/api/ollama-status/route.ts`](app/api/ollama-status/route.ts)). Si ça
+  ne répond pas en ~1 seconde, la case reste désactivée — c'est le cas normal
+  sur le déploiement Vercel, qui n'a par définition aucun moyen d'atteindre
+  l'Ollama de quelqu'un.
+- Le modèle est choisi automatiquement parmi ceux installés (`ollama list`) :
+  un modèle "instruct" en priorité, sinon le premier disponible. Pour forcer
+  un modèle précis, définir `OLLAMA_MODEL` dans `.env.local` (doit
+  correspondre exactement à un nom de `ollama list`, ex: `qwen3:8b`).
+- Chaque nom renvoyé par le modèle est revérifié par recherche exacte dans le
+  texte du document ([`lib/ollama-detect.ts`](lib/ollama-detect.ts)) : un nom
+  halluciné par le LLM (absent du texte réel) est automatiquement ignoré.
+- Cette couche est un **complément**, jamais un remplacement : email,
+  téléphone, IBAN, NIR restent détectés uniquement par regex (fiable et
+  déterministe) ; seuls les noms de personnes bénéficient du renfort IA.
+- Confiance modérée (0.6) sur les noms ajoutés par Ollama : avec un petit
+  modèle local (1B-3B), le taux d'erreur reste non négligeable — l'aperçu
+  doit toujours être vérifié avant de valider l'anonymisation, avec ou sans
+  cette option.
+
+Variables d'environnement optionnelles (`.env.local`, jamais nécessaires sur
+Vercel) :
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434   # défaut, à changer si Ollama écoute ailleurs
+OLLAMA_MODEL=qwen3:8b                     # optionnel : force un modèle précis
+```
 
 ## Sécurité (npm audit)
 
@@ -185,6 +224,7 @@ app/
   page.tsx                 page unique (upload -> aperçu -> anonymisation -> téléchargement)
   api/upload/route.ts       upload + extraction + détection PII
   api/anonymize/route.ts    génération et téléchargement du PDF anonymisé
+  api/ollama-status/route.ts vérifie si un Ollama local répond (pour l'UI)
 components/
   UploadZone.tsx
   PdfPreview.tsx
@@ -193,6 +233,7 @@ components/
 lib/
   pii-patterns.ts           regex PII (commentées, configurables)
   name-detect.ts            détection heuristique des noms/prénoms
+  ollama-detect.ts          renfort optionnel par IA locale (Ollama)
   pii-detect.ts             application des patterns + projection sur les positions
   pdf-extract.ts            extraction du texte natif (pdfjs-dist)
   pdf-render.ts             rendu PDF -> image (aperçu, OCR, rasterisation)

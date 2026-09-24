@@ -36,6 +36,11 @@ export async function POST(req: Request) {
       );
     }
 
+    // Case à cocher "Améliorer la détection des noms via IA" côté client :
+    // n'a d'effet que si un Ollama local répond réellement (voir
+    // /api/ollama-status et lib/ollama-detect.ts) — sinon ignoré sans erreur.
+    const useOllama = formData.get("useOllama") === "true";
+
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
 
@@ -60,7 +65,7 @@ export async function POST(req: Request) {
         text = buildPageText(items);
       }
 
-      const pageDetections = detectPiiOnPage(index, text, items);
+      const pageDetections = await detectPiiOnPage(index, text, items, useOllama);
       detections.push(...pageDetections);
 
       pages.push({

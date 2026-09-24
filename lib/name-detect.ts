@@ -11,15 +11,15 @@
  * Aucune des deux n'appelle de service externe : tout tourne dans le process
  * Node du serveur.
  *
- * Option IA (désactivée par défaut) : voir `ENABLE_AI_NAME_DETECTION` plus
- * bas. Elle n'est PAS implémentée volontairement pour ne jamais faire fuiter
- * le contenu d'un document vers un LLM cloud ; le flag existe uniquement pour
- * documenter/afficher clairement l'option dans l'UI (case à cocher désactivée
- * avec message explicatif).
+ * Option IA locale (Ollama) : voir `lib/ollama-detect.ts`. Optionnelle et
+ * activable uniquement quand un serveur Ollama tourne sur la même machine
+ * (usage local, `npm run dev`/`npm run start`) — inactive et sans impact sur
+ * un déploiement Vercel, qui ne peut pas atteindre l'Ollama de quelqu'un.
  */
 
 import nlp from "compromise";
 import { NAME_STOPWORDS_FR } from "./pii-patterns";
+import { detectNamesWithOllama } from "./ollama-detect";
 
 // `compromise` ne connaît quasiment aucun nom de ville française (son
 // répertoire de lieux est anglophone) : `.places()` renvoie un tableau vide
@@ -54,11 +54,6 @@ const KNOWN_FRENCH_PLACES = new Set(
     "Chateau-Thierry",
   ].map((p) => p.toLowerCase())
 );
-
-/** Toujours `false` : voir le commentaire ci-dessus. Ne pas activer sans
- * avoir mis en place un modèle local/self-hosted et sans avoir prévenu
- * l'utilisateur explicitement dans l'UI. */
-export const ENABLE_AI_NAME_DETECTION = false;
 
 export interface NameMatch {
   text: string;
@@ -198,11 +193,33 @@ function mergeOverlapping(matches: NameMatch[], sourceText: string): NameMatch[]
   return merged;
 }
 
-export function detectNames(text: string): NameMatch[] {
+export async function detectNames(
+  text: string,
+  useOllama: boolean = false
+): Promise<NameMatch[]> {
   const places = getKnownPlaces(nlp(text));
   const combined = [
     ...regexNameCandidates(text, places),
     ...compromiseNameCandidates(text, places),
   ];
+
+  if (useOllama) {
+    // Complément optionnel : ne remplace jamais la regex + compromise
+    // ci-dessus, vient seulement ajouter des noms qu'elles auraient manqués.
+    // Confiance volontairement modérée (0.6) : un petit modèle local peut se
+    // tromper, mieux vaut laisser l'utilisateur trancher dans l'aperçu que
+    // masquer aveuglément sur la seule foi du LLM.
+    try {
+      const ollamaMatches = await detectNamesWithOllama(text);
+      for (const m of ollamaMatches) {
+        if (isKnownPlace(m.text, places)) continue;
+        combined.push({ text: m.text, start: m.start, end: m.end, confidence: 0.6 });
+      }
+    } catch {
+      // Dégradation silencieuse : une couche optionnelle ne doit jamais
+      // faire échouer toute la détection PII.
+    }
+  }
+
   return mergeOverlapping(combined, text);
 }

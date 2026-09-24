@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import UploadZone from "@/components/UploadZone";
 import DetectionPanel from "@/components/DetectionPanel";
 import PdfPreview, { ManualZone } from "@/components/PdfPreview";
@@ -33,34 +33,96 @@ export default function Home() {
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultFileName, setResultFileName] = useState<string>("document_anonymise.pdf");
 
-  const handleFileSelected = useCallback(async (file: File) => {
-    setError(null);
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Échec de l'analyse du PDF.");
-      }
-      const data: UploadResponse = await res.json();
-      setUploadResult(data);
-      setOriginalFile(file);
+  // Disponibilité d'un Ollama local (voir /api/ollama-status) : null tant
+  // que non vérifié, false si injoignable (cas normal sur Vercel), true si
+  // détecté sur cette machine.
+  const [ollamaAvailable, setOllamaAvailable] = useState<boolean | null>(null);
+  const [ollamaModel, setOllamaModel] = useState<string | undefined>(undefined);
+  const [useOllama, setUseOllama] = useState(false);
+  const [isReanalyzing, setIsReanalyzing] = useState(false);
 
-      const initialIncluded: Record<string, boolean> = {};
-      for (const d of data.detections as Detection[]) {
-        initialIncluded[d.id] = d.confidence >= DEFAULT_INCLUDE_THRESHOLD;
-      }
-      setIncluded(initialIncluded);
-      setManualZones([]);
-      setStep("review");
-    } catch (err: any) {
-      setError(err.message || "Une erreur est survenue.");
-    } finally {
-      setIsUploading(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/ollama-status")
+      .then((res) => res.json())
+      .then((status: { available: boolean; model: string }) => {
+        if (cancelled) return;
+        setOllamaAvailable(status.available);
+        setOllamaModel(status.model);
+      })
+      .catch(() => {
+        if (!cancelled) setOllamaAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const analyzeFile = useCallback(async (file: File, withOllama: boolean) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("useOllama", withOllama ? "true" : "false");
+    const res = await fetch("/api/upload", { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || "Échec de l'analyse du PDF.");
+    }
+    return (await res.json()) as UploadResponse;
+  }, []);
+
+  const handleFileSelected = useCallback(
+    async (file: File) => {
+      setError(null);
+      setIsUploading(true);
+      try {
+        const data = await analyzeFile(file, useOllama);
+        setUploadResult(data);
+        setOriginalFile(file);
+
+        const initialIncluded: Record<string, boolean> = {};
+        for (const d of data.detections as Detection[]) {
+          initialIncluded[d.id] = d.confidence >= DEFAULT_INCLUDE_THRESHOLD;
+        }
+        setIncluded(initialIncluded);
+        setManualZones([]);
+        setStep("review");
+      } catch (err: any) {
+        setError(err.message || "Une erreur est survenue.");
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [analyzeFile, useOllama]
+  );
+
+  // Relance l'analyse du même fichier avec/sans le renfort Ollama, en gardant
+  // les choix déjà faits par l'utilisateur pour les détections identiques
+  // (même id) — seules les nouvelles détections apportées par Ollama sont
+  // ajoutées, cochées par défaut selon le même seuil de confiance.
+  const handleToggleOllama = useCallback(
+    async (enabled: boolean) => {
+      setUseOllama(enabled);
+      if (!originalFile) return;
+      setIsReanalyzing(true);
+      setError(null);
+      try {
+        const data = await analyzeFile(originalFile, enabled);
+        setUploadResult(data);
+        setIncluded((prev) => {
+          const next: Record<string, boolean> = {};
+          for (const d of data.detections as Detection[]) {
+            next[d.id] = d.id in prev ? prev[d.id] : d.confidence >= DEFAULT_INCLUDE_THRESHOLD;
+          }
+          return next;
+        });
+      } catch (err: any) {
+        setError(err.message || "Une erreur est survenue.");
+      } finally {
+        setIsReanalyzing(false);
+      }
+    },
+    [analyzeFile, originalFile]
+  );
 
   const handleAnonymize = useCallback(async () => {
     if (!uploadResult || !originalFile) return;
@@ -102,6 +164,7 @@ export default function Home() {
     setManualZones([]);
     setResultUrl(null);
     setError(null);
+    setUseOllama(false);
   }, []);
 
   const zoneCount = useMemo(() => {
@@ -210,12 +273,19 @@ export default function Home() {
                       .getElementById(`page-${page}`)
                       ?.scrollIntoView({ behavior: "smooth", block: "center" });
                   }}
-                  aiNameDetectionEnabled={false}
-                  onToggleAiNameDetection={() => {}}
+                  aiNameDetectionEnabled={useOllama}
+                  onToggleAiNameDetection={handleToggleOllama}
+                  ollamaAvailable={ollamaAvailable}
+                  ollamaModel={ollamaModel}
                 />
+                {isReanalyzing && (
+                  <p className="font-body text-xs text-bw-cloudy">
+                    Nouvelle analyse avec Ollama en cours…
+                  </p>
+                )}
                 <button
                   onClick={handleAnonymize}
-                  disabled={isAnonymizing || zoneCount === 0}
+                  disabled={isAnonymizing || isReanalyzing || zoneCount === 0}
                   className="rounded-full bg-bw-pink px-4 py-2.5 font-heading text-sm font-semibold text-white shadow-bw transition-colors hover:bg-bw-pink-dark disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isAnonymizing
